@@ -61,7 +61,7 @@ public:
 };
 
 static Virtual_column_info * unpack_vcol_info_from_frm(THD *,
-              TABLE *, String *, Virtual_column_info **, bool *);
+              TABLE *, String *, Virtual_column_info **, bool *, bool *);
 
 /* INFORMATION_SCHEMA name */
 LEX_CSTRING INFORMATION_SCHEMA_NAME= {STRING_WITH_LEN("information_schema")};
@@ -1052,6 +1052,7 @@ bool parse_vcol_defs(THD *thd, MEM_ROOT *mem_root, TABLE *table,
   Virtual_column_info *vcol= 0;
   StringBuffer<MAX_FIELD_WIDTH> expr_str;
   bool res= 1;
+  bool need_refix= false;
   DBUG_ENTER("parse_vcol_defs");
 
   if (check_constraint_ptr)
@@ -1119,7 +1120,8 @@ bool parse_vcol_defs(THD *thd, MEM_ROOT *mem_root, TABLE *table,
     case VCOL_GENERATED_VIRTUAL:
     case VCOL_GENERATED_STORED:
       vcol= unpack_vcol_info_from_frm(thd, table, &expr_str,
-                                    &((*field_ptr)->vcol_info), error_reported);
+                                    &((*field_ptr)->vcol_info), error_reported,
+                                    &need_refix);
       *(vfield_ptr++)= *field_ptr;
       if (vcol && field_ptr[0]->check_vcol_sql_mode_dependency(thd, mode))
       {
@@ -1131,7 +1133,7 @@ bool parse_vcol_defs(THD *thd, MEM_ROOT *mem_root, TABLE *table,
     case VCOL_DEFAULT:
       vcol= unpack_vcol_info_from_frm(thd, table, &expr_str,
                                       &((*field_ptr)->default_value),
-                                      error_reported);
+                                      error_reported, &need_refix);
       *(dfield_ptr++)= *field_ptr;
       if (vcol && (vcol->flags & (VCOL_NON_DETERMINISTIC | VCOL_SESSION_FUNC)))
         table->s->non_determinstic_insert= true;
@@ -1139,12 +1141,13 @@ bool parse_vcol_defs(THD *thd, MEM_ROOT *mem_root, TABLE *table,
     case VCOL_CHECK_FIELD:
       vcol= unpack_vcol_info_from_frm(thd, table, &expr_str,
                                       &((*field_ptr)->check_constraint),
-                                      error_reported);
+                                      error_reported, &need_refix);
       *check_constraint_ptr++= (*field_ptr)->check_constraint;
       break;
     case VCOL_CHECK_TABLE:
       vcol= unpack_vcol_info_from_frm(thd, table, &expr_str,
-                                      check_constraint_ptr, error_reported);
+                                      check_constraint_ptr, error_reported,
+                                      &need_refix);
       check_constraint_ptr++;
       break;
     }
@@ -1165,7 +1168,7 @@ bool parse_vcol_defs(THD *thd, MEM_ROOT *mem_root, TABLE *table,
       expr_str.append(')');
       vcol= unpack_vcol_info_from_frm(thd, table, &expr_str,
                                       &((*field_ptr)->default_value),
-                                      error_reported);
+                                      error_reported, &need_refix);
       *(dfield_ptr++)= *field_ptr;
       if (!field->default_value->expr)
         goto end;
@@ -1190,6 +1193,14 @@ bool parse_vcol_defs(THD *thd, MEM_ROOT *mem_root, TABLE *table,
       *error_reported= true;
       goto end;
     }
+
+  if (need_refix && table->vcol_build_refix_list(thd))
+  {
+    my_error(ER_OUT_OF_RESOURCES, MYF(0));
+    goto end;
+  }
+
+  DBUG_ASSERT(!need_refix || !table->vcol_refix_list.is_empty());
 
   res=0;
 end:
@@ -2996,7 +3007,7 @@ bool Virtual_column_info::fix_session_expr(THD *thd, TABLE *table)
   DBUG_ASSERT(!expr->fixed);
   if (expr->walk(&Item::change_context_processor, 0, thd->lex->current_context()))
     return true;
-  table->vcol_cleanup_list.push_back(this, thd->mem_root);
+//   table->vcol_cleanup_list.push_back(this, thd->mem_root);
   if (fix_expr(thd))
     return true;
   if (expr->walk(&Item::change_context_processor, 0, NULL))
@@ -3086,6 +3097,25 @@ Vcol_expr_context::~Vcol_expr_context()
 }
 
 
+bool TABLE::vcol_build_refix_list(THD *thd)
+{
+  for (Field **vf= vfield; vf && *vf; vf++)
+    if (vcol_refix_list.push_back((*vf)->vcol_info, &mem_root))
+      return true;
+
+  for (Field **df= default_field; df && *df; df++)
+    if ((*df)->default_value &&
+        vcol_refix_list.push_back((*df)->default_value, &mem_root))
+      return true;
+
+  for (Virtual_column_info **cc= check_constraints; cc && *cc; cc++)
+    if (vcol_refix_list.push_back(*cc, &mem_root))
+      return true;
+  return false;
+}
+
+
+#if 0
 bool TABLE::vcol_fix_expr(THD *thd)
 {
   DBUG_ASSERT(pos_in_table_list || s->tmp_table);
@@ -3124,8 +3154,39 @@ error:
   DBUG_ASSERT(thd->get_stmt_da()->is_error());
   return true;
 }
+#endif
+
+bool TABLE::vcol_fix_expr(THD *thd)
+{
+  DBUG_ASSERT(pos_in_table_list || s->tmp_table);
+  if ((pos_in_table_list && pos_in_table_list->placeholder()) ||
+      vcol_refix_list.is_empty())
+    return false;
+
+  if (!thd->stmt_arena->is_conventional())
+  {
+    /* NOTE: Under trigger we already have fixed expressions */
+    return false;
+  }
+
+  Vcol_expr_context expr_ctx(thd, this);
+  if (expr_ctx.init())
+    return true;
+
+  List_iterator_fast<Virtual_column_info> it(vcol_refix_list);
+  while (Virtual_column_info *vcol= it++)
+    if (vcol->fix_session_expr(thd, this))
+      goto error;
+
+  return false;
+
+error:
+  DBUG_ASSERT(thd->get_stmt_da()->is_error());
+  return true;
+}
 
 
+#if 0
 bool TABLE::vcol_cleanup_expr(THD *thd)
 {
   if (vcol_cleanup_list.is_empty())
@@ -3138,6 +3199,22 @@ bool TABLE::vcol_cleanup_expr(THD *thd)
     result|= vcol->cleanup_session_expr();
 
   vcol_cleanup_list.empty();
+
+  DBUG_ASSERT(!result || thd->get_stmt_da()->is_error());
+  return result;
+}
+#endif
+
+bool TABLE::vcol_cleanup_expr(THD *thd)
+{
+  if (vcol_refix_list.is_empty())
+    return false;
+
+  List_iterator<Virtual_column_info> it(vcol_refix_list);
+  bool result= false;
+
+  while (Virtual_column_info *vcol= it++)
+    result|= vcol->cleanup_session_expr();
 
   DBUG_ASSERT(!result || thd->get_stmt_da()->is_error());
   return result;
@@ -3224,7 +3301,7 @@ bool Virtual_column_info::fix_and_check_expr(THD *thd, TABLE *table)
 
   if (need_refix())
   {
-    table->s->vcol_need_refix= true;
+//     table->s->vcol_need_refix= true;
     cleanup_session_expr();
   }
 
@@ -3266,7 +3343,7 @@ bool Virtual_column_info::fix_and_check_expr(THD *thd, TABLE *table)
 static Virtual_column_info *
 unpack_vcol_info_from_frm(THD *thd, TABLE *table,
                           String *expr_str, Virtual_column_info **vcol_ptr,
-                          bool *error_reported)
+                          bool *error_reported, bool *need_refix)
 {
   Create_field vcol_storage; // placeholder for vcol_info
   Parser_state parser_state;
@@ -3309,6 +3386,7 @@ unpack_vcol_info_from_frm(THD *thd, TABLE *table,
   {
     *vcol_ptr= vcol_info= vcol_storage.vcol_info;   // Expression ok
     DBUG_ASSERT(vcol_info->expr);
+    *need_refix= vcol_info->need_refix();
     goto end;
   }
   *error_reported= TRUE;
@@ -3393,7 +3471,8 @@ enum open_frm_error open_table_from_share(THD *thd, TABLE_SHARE *share,
   outparam->covering_keys.init();
   outparam->intersect_keys.init();
   outparam->keys_in_use_for_query.init();
-  outparam->vcol_cleanup_list.empty();
+//   outparam->vcol_cleanup_list.empty();
+  outparam->vcol_refix_list.empty();
 
   /* Allocate handler */
   outparam->file= 0;

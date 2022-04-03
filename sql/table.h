@@ -822,8 +822,8 @@ struct TABLE_SHARE
   /* This is set for temporary tables where CREATE was binary logged */
   bool table_creation_was_logged;
   bool non_determinstic_insert;
-  bool vcol_need_refix;                 /* Just a hint if any of vcols has need_refix() */
-  List<Virtual_column_info> vcol_cleanup_list;
+//   bool vcol_need_refix;                 /* Just a hint if any of vcols has need_refix() */
+//   List<Virtual_column_info> vcol_cleanup_list;
   bool has_update_default_function;
   bool can_do_row_logging;              /* 1 if table supports RBR */
   ulong table_map_id;                   /* for row-based replication */
@@ -1411,6 +1411,7 @@ public:
   */
   bool alias_name_used;              /* true if table_name is alias */
   bool get_fields_in_item_tree;      /* Signal to fix_field */
+  List<Virtual_column_info> vcol_refix_list;
 private:
   bool m_needs_reopen;
   bool created;    /* For tmp tables. TRUE <=> tmp table was actually created.*/
@@ -1612,6 +1613,7 @@ public:
                                       TABLE *tmp_table,
                                       TMP_TABLE_PARAM *tmp_table_param,
                                       bool with_cleanup);
+  bool vcol_build_refix_list(THD *thd);
   bool vcol_fix_expr(THD *thd);
   bool vcol_cleanup_expr(THD *thd);
   bool vcol_fix_exprs(THD *thd);
