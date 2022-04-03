@@ -1144,7 +1144,7 @@ TABLE *THD::open_temporary_table(TMP_TABLE_SHARE *share,
 
   if (table->vcol_fix_expr(this))
   {
-    my_free(table);
+    drop_temporary_table(table, NULL, false);
     DBUG_RETURN(NULL);
   }
 
