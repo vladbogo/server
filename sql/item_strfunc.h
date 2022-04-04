@@ -261,7 +261,7 @@ public:
   Item_func_concat(THD *thd, Item *a, Item *b): Item_str_func(thd, a, b) {}
   String *val_str(String *);
   bool fix_length_and_dec();
-  const char *func_name() const { return "concat"; }
+  const char *func_name() const { return "mariadb_schema.concat"; }
   Item *get_copy(THD *thd)
   { return get_item_copy<Item_func_concat>(thd, this); }
 };
@@ -342,7 +342,7 @@ public:
   String *val_str(String *to) { return val_str_internal(to, NULL); };
   bool fix_length_and_dec();
   String *val_str_internal(String *str, String *empty_string_for_null);
-  const char *func_name() const { return "replace"; }
+  const char *func_name() const { return "mariadb_schema.replace"; }
   Item *get_copy(THD *thd)
   { return get_item_copy<Item_func_replace>(thd, this); }
 };
@@ -493,7 +493,7 @@ public:
     Item_str_func(thd, a, b, c) {}
   String *val_str(String *);
   bool fix_length_and_dec();
-  const char *func_name() const { return "substr"; }
+  const char *func_name() const { return "mariadb_schema.substr"; }
   Item *get_copy(THD *thd)
   { return get_item_copy<Item_func_substr>(thd, this); }
 };
@@ -566,7 +566,7 @@ public:
   Sql_mode_dependency value_depends_on_sql_mode() const;
   String *val_str(String *);
   bool fix_length_and_dec();
-  const char *func_name() const { return "trim"; }
+  const char *func_name() const { return "mariadb_schema.trim"; }
   void print(String *str, enum_query_type query_type);
   virtual const char *mode_name() const { return "both"; }
   Item *get_copy(THD *thd)
@@ -606,7 +606,7 @@ public:
     return Item_func::value_depends_on_sql_mode();
   }
   String *val_str(String *);
-  const char *func_name() const { return "ltrim"; }
+  const char *func_name() const { return "mariadb_schema.ltrim"; }
   const char *mode_name() const { return "leading"; }
   Item *get_copy(THD *thd)
   { return get_item_copy<Item_func_ltrim>(thd, this); }
@@ -641,7 +641,7 @@ public:
   Item_func_rtrim(THD *thd, Item *a, Item *b): Item_func_trim(thd, a, b) {}
   Item_func_rtrim(THD *thd, Item *a): Item_func_trim(thd, a) {}
   String *val_str(String *);
-  const char *func_name() const { return "rtrim"; }
+  const char *func_name() const { return "mariadb_schema.rtrim"; }
   const char *mode_name() const { return "trailing"; }
   Item *get_copy(THD *thd)
   { return get_item_copy<Item_func_rtrim>(thd, this); }
@@ -1137,7 +1137,7 @@ public:
   Item_func_rpad(THD *thd, Item *arg1, Item *arg2):
     Item_func_pad(thd, arg1, arg2) {}
   String *val_str(String *);
-  const char *func_name() const { return "rpad"; }
+  const char *func_name() const { return "mariadb_schema.rpad"; }
   Sql_mode_dependency value_depends_on_sql_mode() const;
   Item *get_copy(THD *thd)
   { return get_item_copy<Item_func_rpad>(thd, this); }
@@ -1173,7 +1173,7 @@ public:
   Item_func_lpad(THD *thd, Item *arg1, Item *arg2):
     Item_func_pad(thd, arg1, arg2) {}
   String *val_str(String *);
-  const char *func_name() const { return "lpad"; }
+  const char *func_name() const { return "mariadb_schema.lpad"; }
   Item *get_copy(THD *thd)
   { return get_item_copy<Item_func_lpad>(thd, this); }
 };

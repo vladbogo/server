@@ -195,6 +195,7 @@ void ORAerror(THD *thd, const char *s)
   Lex_for_loop_st for_loop;
   Lex_for_loop_bounds_st for_loop_bounds;
   Lex_trim_st trim;
+  Lex_substring_spec_st substring_spec;
   vers_history_point_t vers_history_point;
 
   /* pointers */
@@ -1593,6 +1594,7 @@ END_OF_INPUT
 %type <for_loop> sp_for_loop_index_and_bounds
 %type <for_loop_bounds> sp_for_loop_bounds
 %type <trim> trim_operands
+%type <substring_spec> substring_spec
 %type <num> opt_sp_for_loop_direction
 %type <spvar_mode> sp_opt_inout
 %type <index_hint> index_hint_type
@@ -10615,6 +10617,26 @@ function_call_keyword:
           }
         ;
 
+substring_spec:
+          expr ',' expr ',' expr
+          {
+            $$= Lex_substring_spec_st::init($1, $3, $5);
+          }
+        | expr ',' expr
+          {
+            $$= Lex_substring_spec_st::init($1, $3);
+          }
+        | expr FROM expr FOR_SYM expr
+          {
+            $$= Lex_substring_spec_st::init($1, $3, $5);
+          }
+        | expr FROM expr
+          {
+            $$= Lex_substring_spec_st::init($1, $3);
+          }
+        ;
+
+
 /*
   Function calls using non reserved keywords, with special syntaxic forms.
   Dedicated grammar rules are needed because of the syntax,
@@ -10729,24 +10751,9 @@ function_call_nonkeyword:
             if (unlikely($$ == NULL))
               MYSQL_YYABORT;
           }
-        | SUBSTRING '(' expr ',' expr ',' expr ')'
+        | SUBSTRING '(' substring_spec ')'
           {
-            if (unlikely(!($$= Lex->make_item_func_substr(thd, $3, $5, $7))))
-              MYSQL_YYABORT;
-          }
-        | SUBSTRING '(' expr ',' expr ')'
-          {
-            if (unlikely(!($$= Lex->make_item_func_substr(thd, $3, $5))))
-              MYSQL_YYABORT;
-          }
-        | SUBSTRING '(' expr FROM expr FOR_SYM expr ')'
-          {
-            if (unlikely(!($$= Lex->make_item_func_substr(thd, $3, $5, $7))))
-              MYSQL_YYABORT;
-          }
-        | SUBSTRING '(' expr FROM expr ')'
-          {
-            if (unlikely(!($$= Lex->make_item_func_substr(thd, $3, $5))))
+            if (unlikely(!($$= Lex->make_item_func_substr(thd, $3))))
               MYSQL_YYABORT;
           }
         | SYSDATE opt_time_precision
@@ -11190,6 +11197,28 @@ function_call_generic:
         | ident_cli '.' ident_cli '.' ident_cli '(' opt_expr_list ')'
           {
             if (unlikely(!($$= Lex->make_item_func_call_generic(thd, &$1, &$3, &$5, $7))))
+              MYSQL_YYABORT;
+          }
+        | ident_cli '.' REPLACE '(' expr ',' expr ',' expr ')'
+          {
+            Lex_ident_sys schema(thd, &$1);
+            if (unlikely(schema.is_null() ||
+                         !($$= Lex->make_item_func_replace(thd, schema,
+                                                           $5, $7, $9))))
+              MYSQL_YYABORT;
+          }
+        | ident_cli '.' SUBSTRING '(' substring_spec ')'
+          {
+            Lex_ident_sys schema(thd, &$1);
+            if (unlikely(schema.is_null() ||
+                         !($$= Lex->make_item_func_substr(thd, schema, $5))))
+              MYSQL_YYABORT;
+          }
+        | ident_cli '.' TRIM '(' trim_operands ')'
+          {
+            Lex_ident_sys schema(thd, &$1);
+            if (unlikely(schema.is_null() ||
+                         !($$= $5.make_item_func_trim(thd, schema))))
               MYSQL_YYABORT;
           }
         ;

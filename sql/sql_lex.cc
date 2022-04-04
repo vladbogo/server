@@ -2075,10 +2075,22 @@ int Lex_input_stream::scan_ident_start(THD *thd, Lex_ident_cli_st *str)
   {
     is_8bit= get_7bit_or_8bit_ident(thd, &c);
   }
-  if (c == '.' && ident_map[(uchar) yyPeek()])
-    next_state= MY_LEX_IDENT_SEP;// Next is '.'
 
   uint length= yyLength();
+  if (c == '.' && ident_map[(uchar) yyPeek()])
+    next_state= MY_LEX_IDENT_SEP;// Next is '.'
+  else
+  {
+    int tokval;
+    yyUnget();
+    if ((tokval= find_keyword(str, length, c == '(')))
+    {
+      next_state= MY_LEX_START;        // Allow signed numbers
+      return(tokval);                  // Was keyword
+    }
+    yySkip();                          // next state does a unget
+  }
+
   yyUnget(); // ptr points now after last token char
   str->set_ident(m_tok_start, length, is_8bit);
   m_cpp_text_start= m_cpp_tok_start;
@@ -8035,19 +8047,33 @@ bool LEX::add_grant_command(THD *thd, enum_sql_command sql_command_arg,
 }
 
 
-Item *LEX::make_item_func_substr(THD *thd, Item *a, Item *b, Item *c)
+const Schema *LEX::find_func_schema_by_name_or_error(const LEX_CSTRING &schema,
+                                                     const LEX_CSTRING &func)
 {
-  return (thd->variables.sql_mode & MODE_ORACLE) ?
-    new (thd->mem_root) Item_func_substr_oracle(thd, a, b, c) :
-    new (thd->mem_root) Item_func_substr(thd, a, b, c);
+  Schema *res= Schema::find_by_name(schema);
+  if (res)
+    return res;
+  Database_qualified_name qname(schema, func);
+  my_error(ER_FUNCTION_NOT_DEFINED, MYF(0), ErrConvDQName(&qname).ptr());
+  return NULL;
 }
 
 
-Item *LEX::make_item_func_substr(THD *thd, Item *a, Item *b)
+Item *LEX::make_item_func_substr(THD *thd, const Lex_substring_spec_st &spec)
 {
-  return (thd->variables.sql_mode & MODE_ORACLE) ?
-    new (thd->mem_root) Item_func_substr_oracle(thd, a, b) :
-    new (thd->mem_root) Item_func_substr(thd, a, b);
+  Schema *schema= Schema::find_implied(thd);
+  return schema->make_item_func_substr(thd, spec);
+}
+
+
+Item *LEX::make_item_func_substr(THD *thd,
+                                 const Lex_ident_sys &schema_name,
+                                 const Lex_substring_spec_st &spec)
+{
+  static const Lex_cstring func_name(STRING_WITH_LEN("SUBSTR"));
+  const Schema *schema= find_func_schema_by_name_or_error(schema_name,
+                                                          func_name);
+  return schema ? schema->make_item_func_substr(thd, spec) : NULL;
 }
 
 
@@ -8056,9 +8082,22 @@ Item *LEX::make_item_func_replace(THD *thd,
                                   Item *find,
                                   Item *replace)
 {
-  return (thd->variables.sql_mode & MODE_ORACLE) ?
-    new (thd->mem_root) Item_func_replace_oracle(thd, org, find, replace) :
-    new (thd->mem_root) Item_func_replace(thd, org, find, replace);
+  Schema *schema= Schema::find_implied(thd);
+  return schema->make_item_func_replace(thd, org, find, replace);
+}
+
+
+Item *LEX::make_item_func_replace(THD *thd,
+                                  const Lex_ident_sys &schema_name,
+                                  Item *org,
+                                  Item *find,
+                                  Item *replace)
+{
+  static const Lex_cstring func_name(STRING_WITH_LEN("REPLACE"));
+  const Schema *schema= find_func_schema_by_name_or_error(schema_name,
+                                                          func_name);
+  return schema ? schema->make_item_func_replace(thd, org, find, replace) :
+                  NULL;
 }
 
 
@@ -8142,9 +8181,18 @@ Item *Lex_trim_st::make_item_func_trim_oracle(THD *thd) const
 
 Item *Lex_trim_st::make_item_func_trim(THD *thd) const
 {
-  return (thd->variables.sql_mode & MODE_ORACLE) ?
-         make_item_func_trim_oracle(thd) :
-         make_item_func_trim_std(thd);
+  const Schema *schema= Schema::find_implied(thd);
+  return schema->make_item_func_trim(thd, *this);
+}
+
+
+Item *Lex_trim_st::make_item_func_trim(THD *thd,
+                                       const Lex_ident_sys &schema_name) const
+{
+  static const Lex_cstring func_name(STRING_WITH_LEN("TRIM"));
+  const Schema *schema= LEX::find_func_schema_by_name_or_error(schema_name,
+                                                               func_name);
+  return schema ? schema->make_item_func_trim(thd, *this) : NULL;
 }
 
 
@@ -8175,6 +8223,19 @@ Item *LEX::make_item_func_call_generic(THD *thd, Lex_ident_cli_st *cdb,
   }
   if (check_routine_name(&name))
     return NULL;
+
+  return make_item_func_call_generic(thd, db, name, args);
+}
+
+
+Item *LEX::make_item_func_call_generic(THD *thd,
+                                       const Lex_ident_sys &db,
+                                       const Lex_ident_sys &name,
+                                       List<Item> *args)
+{
+  const Schema *schema= Schema::find_by_name(db);
+  if (schema)
+    return schema->make_item_func_call_native(thd, name, args);
 
   Create_qfunc *builder= find_qualified_function_builder(thd);
   DBUG_ASSERT(builder);

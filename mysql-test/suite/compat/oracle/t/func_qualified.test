@@ -1,0 +1,69 @@
+--echo #
+--echo # MDEV-27744 InnoDB: Failing assertion: !cursor->index->is_committed() in row0ins.cc (from row_ins_sec_index_entry_by_modify) | Assertion `0' failed in row_upd_sec_index_entry (debug) | Corruption
+--echo #
+
+SET sql_mode=DEFAULT;
+DELIMITER $$;
+CREATE PROCEDURE p1(sqlmode TEXT, qualifier TEXT, expr TEXT)
+BEGIN
+  DECLARE query TEXT DEFAULT 'SELECT $(QUALIFIER)$(EXPR)';
+  DECLARE errmsg TEXT DEFAULT NULL;
+  DECLARE CONTINUE HANDLER FOR 1128, 1305
+  BEGIN
+    GET DIAGNOSTICS CONDITION 1 errmsg = MESSAGE_TEXT;
+  END;
+
+  SET sql_mode=sqlmode;
+  SET query=REPLACE(query, '$(QUALIFIER)', qualifier);
+  SET query=REPLACE(query, '$(EXPR)', expr);
+  SET query= CONCAT('EXPLAIN EXTENDED ', query);
+  SELECT CONCAT('sql_mode=''',sqlmode,'''', '   ',
+                'qualifier=''',qualifier,'''') AS `----------`;
+  SELECT query;
+  EXECUTE IMMEDIATE query;
+  IF errmsg IS NOT NULL THEN
+    SELECT CONCAT('ERROR: ', errmsg) AS errmsg;
+  ELSE
+    SHOW WARNINGS;
+  END IF;
+END;
+$$
+CREATE PROCEDURE p2(sqlmode TEXT, expr TEXT)
+BEGIN
+  CALL p1(sqlmode, '',                expr);
+  CALL p1(sqlmode, 'unknown_schema.', expr);
+  CALL p1(sqlmode, 'mariadb_schema.', expr);
+  CALL p1(sqlmode, 'maxdb_schema.',   expr);
+  CALL p1(sqlmode, 'oracle_schema.',  expr);
+END;
+$$
+CREATE PROCEDURE p3(expr TEXT)
+BEGIN
+  CALL p2('',       expr);
+  CALL p2('ORACLE', expr);
+END;
+$$
+DELIMITER ;$$
+
+CALL p3('CONCAT(''a'')');
+
+CALL p3('LTRIM(''a'')');
+CALL p3('RTRIM(''a'')');
+
+CALL p3('LPAD(''a'',3)');
+CALL p3('LPAD(''a'',3, '' '')');
+
+CALL p3('RPAD(''a'',3)');
+CALL p3('RPAD(''a'',3, '' '')');
+
+CALL p3('REPLACE(''a'',''b'',''c'')');
+
+CALL p3('SUBSTR(''a'',1,2)');
+CALL p3('SUBSTR(''a'' FROM 1)');
+
+CALL p3('TRIM(''a'')');
+CALL p3('TRIM(BOTH '' '' FROM ''a'')');
+
+DROP PROCEDURE p1;
+DROP PROCEDURE p2;
+DROP PROCEDURE p3;

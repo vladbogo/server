@@ -32,6 +32,16 @@ public:
       return thd->type_handler_for_datetime();
     return src;
   }
+  Item *make_item_func_call_native(THD *thd,
+                                   const Lex_ident_sys &name,
+                                   List<Item> *args) const;
+  Item *make_item_func_substr(THD *thd,
+                              const Lex_substring_spec_st &spec) const;
+  Item *make_item_func_trim(THD *thd, const Lex_trim_st &spec) const;
+  Item *make_item_func_replace(THD *thd,
+                               Item *subj,
+                               Item *find,
+                               Item *replace) const;
 };
 
 
@@ -77,4 +87,89 @@ Schema *Schema::find_implied(THD *thd)
   if (thd->variables.sql_mode & MODE_MAXDB)
     return &maxdb_schema;
   return &mariadb_schema;
+}
+
+
+Item *Schema::make_item_func_call_native(THD *thd,
+                                         const Lex_ident_sys &name,
+                                         List<Item> *args) const
+{
+  Create_func *builder= find_native_function_builder(thd, &name);
+  if (builder)
+  {
+    Sql_mode_save mode(thd);
+    thd->variables.sql_mode&= ~MODE_ORACLE;
+    return builder->create_func(thd, &name, args);
+  }
+  my_error(ER_FUNCTION_NOT_DEFINED, MYF(0), name.str);
+  return NULL;
+}
+
+
+Item *Schema_oracle::make_item_func_call_native(THD *thd,
+                                                const Lex_ident_sys &name,
+                                                List<Item> *args) const
+{
+  Create_func *builder= find_native_function_builder(thd, &name);
+  if (builder)
+  {
+    Sql_mode_save mode(thd);
+    thd->variables.sql_mode|= MODE_ORACLE;
+    return builder->create_func(thd, &name, args);
+  }
+  my_error(ER_FUNCTION_NOT_DEFINED, MYF(0), name.str);
+  return NULL;
+}
+
+
+Item *Schema::make_item_func_substr(THD *thd,
+                                    const Lex_substring_spec_st &spec) const
+{
+  return spec.m_for ?
+    new (thd->mem_root) Item_func_substr(thd, spec.m_subject, spec.m_from,
+                                              spec.m_for) :
+    new (thd->mem_root) Item_func_substr(thd, spec.m_subject, spec.m_from);
+}
+
+
+Item *Schema_oracle::make_item_func_substr(THD *thd,
+                                    const Lex_substring_spec_st &spec) const
+{
+  return spec.m_for ?
+    new (thd->mem_root) Item_func_substr_oracle(thd, spec.m_subject,
+                                                     spec.m_from,
+                                                     spec.m_for) :
+    new (thd->mem_root) Item_func_substr_oracle(thd, spec.m_subject,
+                                                     spec.m_from);
+}
+
+
+Item *Schema::make_item_func_trim(THD *thd, const Lex_trim_st &spec) const
+{
+  return spec.make_item_func_trim_std(thd);
+}
+
+
+Item *Schema_oracle::make_item_func_trim(THD *thd,
+                                         const Lex_trim_st &spec) const
+{
+  return spec.make_item_func_trim_oracle(thd);
+}
+
+
+Item *Schema::make_item_func_replace(THD *thd,
+                                     Item *subj,
+                                     Item *find,
+                                     Item *replace) const
+{
+  return new (thd->mem_root) Item_func_replace(thd, subj, find, replace);
+}
+
+
+Item *Schema_oracle::make_item_func_replace(THD *thd,
+                                     Item *subj,
+                                     Item *find,
+                                     Item *replace) const
+{
+  return new (thd->mem_root) Item_func_replace_oracle(thd, subj, find, replace);
 }

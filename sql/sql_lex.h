@@ -3695,11 +3695,21 @@ public:
                           const Lex_ident_cli_st *var_name,
                           const Lex_ident_cli_st *field_name);
 
+  static const Schema *
+    find_func_schema_by_name_or_error(const LEX_CSTRING &schema_name,
+                                      const LEX_CSTRING &func_name);
   Item *make_item_func_replace(THD *thd, Item *org, Item *find, Item *replace);
-  Item *make_item_func_substr(THD *thd, Item *a, Item *b, Item *c);
-  Item *make_item_func_substr(THD *thd, Item *a, Item *b);
+  Item *make_item_func_replace(THD *thd, const Lex_ident_sys &schema,
+                               Item *org, Item *find, Item *replace);
+  Item *make_item_func_substr(THD *thd, const Lex_substring_spec_st &spec);
+  Item *make_item_func_substr(THD *thd, const Lex_ident_sys &schema,
+                              const Lex_substring_spec_st &spec);
   Item *make_item_func_call_generic(THD *thd, Lex_ident_cli_st *db,
                                     Lex_ident_cli_st *name, List<Item> *args);
+  Item *make_item_func_call_generic(THD *thd,
+                                    const Lex_ident_sys &db,
+                                    const Lex_ident_sys &name,
+                                    List<Item> *args);
   Item *make_item_func_call_generic(THD *thd,
                                     Lex_ident_cli_st *db,
                                     Lex_ident_cli_st *pkg,
