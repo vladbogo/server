@@ -783,6 +783,9 @@ int close_thread_tables(THD *thd)
   int error= 0;
   DBUG_ENTER("close_thread_tables");
 
+  if (thd->lex && thd->lex->explain)
+    thd->lex->explain->notify_tables_are_closed();
+
   THD_STAGE_INFO(thd, stage_closing_tables);
 
 #ifdef EXTRA_DEBUG

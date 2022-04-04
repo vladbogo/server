@@ -2999,14 +2999,24 @@ void Show_explain_request::call_in_target_thread()
                  target_thd->query_charset());
 
   DBUG_ASSERT(current_thd == target_thd);
-  set_current_thd(request_thd);
+
+  /*
+    When producing JSON output, one should not change current_thd.
+    (If one does that, they will hit an assert when printing constant item
+    fields.
+  */
+  if (!is_json_format)
+    set_current_thd(request_thd);
+
   if (target_thd->lex->print_explain(explain_buf, 0 /* explain flags*/,
                                      is_analyze, is_json_format,
                                      &printed_anything))
   {
     failed_to_produce= TRUE;
   }
-  set_current_thd(target_thd);
+
+  if (!is_json_format)
+    set_current_thd(target_thd);
 
   if (!printed_anything)
     failed_to_produce= TRUE;
