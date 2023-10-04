@@ -21,6 +21,9 @@
                               *((T)+2)=(char) ((uchar *) &A)[1];\
                               *((T)+3)=(char) ((uchar *) &A)[0]; } while(0)
 
+
+
+
 #define float4get(V,M)   do { float def_temp;\
                               ((uchar*) &def_temp)[0]=(M)[3];\
                               ((uchar*) &def_temp)[1]=(M)[2];\
